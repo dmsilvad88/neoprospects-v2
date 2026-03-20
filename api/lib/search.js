@@ -11,7 +11,7 @@ const https = require('https');
 async function searchLinkedIn(company, keywords, brOnly = true) {
   const kwPart = keywords.slice(0, 5).map(k => `"${k}"`).join(' OR ');
   let query = `site:linkedin.com/in "${company}" (${kwPart})`;
-  if (brOnly) query += ' Brasil OR Brazil OR "São Paulo" OR "Rio de Janeiro"';
+  if (brOnly) query += ' (Brasil OR Brazil OR "São Paulo" OR "Rio de Janeiro" OR "Minas Gerais" OR "Porto Alegre")';
 
   const apiKey = process.env.SERPER_API_KEY;
   if (!apiKey) {
@@ -25,7 +25,7 @@ function serperSearch(query, apiKey) {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify({
       q:   query,
-      num: 10,       // results per page
+      num: 20,       // results per page
       gl:  'br',     // geolocation: Brazil
       hl:  'pt-br',  // language: Brazilian Portuguese
     });
