@@ -85,35 +85,6 @@ body::before {
   content: '⚡'; font-size: 12px;
 }
 
-/* ── API URL Banner ───────────────────────────────────────────────────────── */
-.api-banner {
-  background: var(--navy-light); border: 1px solid rgba(11,31,74,0.12);
-  border-left: 3px solid var(--orange); border-radius: var(--r-sm);
-  padding: 11px 16px; margin-bottom: 20px;
-  display: flex; align-items: center; gap: 12px; font-size: 13px;
-}
-.api-banner.connected { border-left-color: var(--success); background: var(--success-dim); }
-.api-banner.error     { border-left-color: var(--error);   background: var(--error-dim); }
-.api-dot {
-  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
-  background: var(--orange); animation: pulse 2s ease infinite;
-}
-.api-banner.connected .api-dot { background: var(--success); }
-.api-banner.error .api-dot     { background: var(--error); animation: none; }
-@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
-.api-url-input {
-  flex: 1; background: var(--surface); border: 1px solid var(--border);
-  border-radius: 6px; padding: 5px 10px; font-family: var(--mono);
-  font-size: 12px; color: var(--text); outline: none;
-}
-.api-url-input:focus { border-color: var(--orange); }
-.api-check-btn {
-  background: var(--navy); border: none; border-radius: 6px;
-  color: #fff; font-family: var(--font); font-weight: 700;
-  font-size: 12px; padding: 6px 14px; cursor: pointer; white-space: nowrap;
-  transition: background .15s;
-}
-.api-check-btn:hover { background: var(--navy-mid); }
 
 /* ── Section label ────────────────────────────────────────────────────────── */
 .slabel {
@@ -372,18 +343,6 @@ textarea::placeholder { color: var(--text3); }
     <div class="topbar-v2">Auto Search</div>
   </div>
 
-  <!-- API Connection Banner -->
-  <div class="api-banner" id="api-banner">
-    <div class="api-dot"></div>
-    <div style="flex:1">
-      <strong>API URL</strong> — paste your Vercel deployment URL below
-    </div>
-    <input class="api-url-input" id="api-url" type="text"
-      placeholder="https://your-project.vercel.app"
-      value="">
-    <button class="api-check-btn" onclick="checkApi()">Check</button>
-  </div>
-
   <!-- Config -->
   <div class="slabel">Target Configuration</div>
   <div class="config-grid">
@@ -442,11 +401,11 @@ textarea::placeholder { color: var(--text3); }
 // ── Config ────────────────────────────────────────────────────────────────────
 // Set this to your Vercel deployment URL after deploying the API
 // It will also be saved/loaded from localStorage
-const DEFAULT_API_URL = '';
+const API_BASE = 'https://neoprospects-v2.vercel.app';
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let STATE = {};
-let API_URL = '';
+
 
 const AVCOLORS = [
   ['#0b1f4a','#1a3a6b'],['#c86400','#f7941d'],
@@ -465,7 +424,6 @@ function load()    { try{const r=localStorage.getItem('np2_state');STATE=r?JSON.
 function saveCfg() {
   try{ localStorage.setItem('np2_cfg', JSON.stringify({
     co: g('txt-companies').value, kw: g('txt-keywords').value,
-    br: g('opt-br').checked, mode: g('opt-mode').value, api: g('api-url').value
   })); }catch(e){}
 }
 function loadCfg() {
@@ -474,38 +432,9 @@ function loadCfg() {
     const c=JSON.parse(r);
     if(c.co)  g('txt-companies').value = c.co;
     if(c.kw)  g('txt-keywords').value  = c.kw;
-    if(c.api) g('api-url').value       = c.api;
     g('opt-br').checked = c.br !== false;
     if(c.mode) g('opt-mode').value = c.mode;
   }catch(e){}
-}
-
-// ── API check ─────────────────────────────────────────────────────────────────
-async function checkApi() {
-  const url = g('api-url').value.trim().replace(/\/$/, '');
-  if (!url) { setBanner('error', 'Enter your Vercel URL first'); return; }
-
-  setBanner('info', 'Checking connection…');
-  try {
-    const r = await fetch(`${url}/api/health`);
-    const d = await r.json();
-    if (d.status === 'ok') {
-      API_URL = url;
-      setBanner('connected', `Connected — API v${d.version}`);
-      saveCfg();
-    } else {
-      setBanner('error', 'API responded but returned unexpected data');
-    }
-  } catch(e) {
-    setBanner('error', `Cannot reach API: ${e.message}`);
-  }
-}
-
-function setBanner(type, msg) {
-  const b = g('api-banner');
-  b.className = `api-banner ${type === 'connected' ? 'connected' : type === 'error' ? 'error' : ''}`;
-  const dot = b.querySelector('.api-dot');
-  b.querySelector('div:nth-child(2)').innerHTML = `<strong>${type === 'connected' ? '✓ Connected' : type === 'error' ? '✗ Error' : 'Checking…'}</strong> — ${msg}`;
 }
 
 // ── Main search ───────────────────────────────────────────────────────────────
@@ -518,8 +447,7 @@ async function runSearch() {
   if (!companies.length) return setStatus('err', 'Enter at least one company.');
   if (!keywords.length)  return setStatus('err', 'Enter at least one keyword.');
 
-  API_URL = g('api-url').value.trim().replace(/\/$/, '');
-  if (!API_URL) return setStatus('err', 'Enter your API URL above and click Check first.');
+  
 
   saveCfg();
   const btn = g('search-btn');
@@ -546,7 +474,7 @@ async function runBatchSearch(companies, keywords, brOnly) {
   logProgress('Sending batch request to API…');
   setProgress(20);
 
-  const r = await fetch(`${API_URL}/api/search/batch`, {
+  const r = await fetch(`${API_BASE}/api/search/batch`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ companies, keywords, brOnly })
@@ -585,7 +513,7 @@ async function runSequentialSearch(companies, keywords, brOnly) {
     logProgress(`Searching: ${co}…`);
 
     try {
-      const r = await fetch(`${API_URL}/api/search`, {
+      const r = await fetch(`${API_BASE}/api/search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ company: co, keywords, brOnly })
@@ -614,8 +542,7 @@ async function runSequentialSearch(companies, keywords, brOnly) {
 
 // ── Rescan single company ─────────────────────────────────────────────────────
 async function rescanCompany(co, btnEl) {
-  API_URL = g('api-url').value.trim().replace(/\/$/, '');
-  if (!API_URL) { alert('Set your API URL first.'); return; }
+
 
   const keywords = getKws();
   const brOnly   = g('opt-br').checked;
@@ -623,7 +550,7 @@ async function rescanCompany(co, btnEl) {
   btnEl.disabled = true; btnEl.textContent = '⏳';
 
   try {
-    const r = await fetch(`${API_URL}/api/search`, {
+    const r = await fetch(`${API_BASE}/api/search`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ company: co, keywords, brOnly })
@@ -778,14 +705,11 @@ function getCos(){ return g('txt-companies').value.split('\n').map(s=>s.trim()).
 function getKws() { return g('txt-keywords').value.split('\n').map(s=>s.trim()).filter(Boolean); }
 
 ['txt-companies','txt-keywords'].forEach(id => g(id).addEventListener('input', saveCfg));
-g('api-url').addEventListener('change', saveCfg);
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 load(); loadCfg();
 if (Object.keys(STATE).length) render();
 
-// Auto-check API if URL is saved
-if (g('api-url').value) checkApi();
 </script>
 </body>
 </html>
