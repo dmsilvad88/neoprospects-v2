@@ -6,15 +6,24 @@ const { searchLinkedIn } = require('./lib/search');
 const { parseResults }   = require('./lib/parser');
 
 // ── CORS helper ───────────────────────────────────────────────────────────────
-function setCors(res) {
-  res.setHeader('Access-Control-Allow-Origin',  '*');
+const ALLOWED_ORIGINS = [
+  'https://dmsilvad88.github.io',
+  'https://neoprospects-v2.vercel.app',
+  'http://localhost:3000',
+];
+
+function setCors(req, res) {
+  const origin = req.headers.origin;
+  if (ALLOWED_ORIGINS.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
 module.exports = async function handler(req, res) {
-  setCors(res);
+  setCors(req, res);
 
   // Preflight
   if (req.method === 'OPTIONS') {
