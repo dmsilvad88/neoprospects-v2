@@ -1,68 +1,67 @@
 // lib/search.js
-// Uses Google Custom Search API (CSE)
-// Free tier: 100 queries/day, resets daily — no credit card needed
-// Setup: https://developers.google.com/custom-search/v1/overview
-// 1. Create a CSE at https://programmablesearchengine.google.com
-//    - Add www.linkedin.com/in/* as the site to search
-// 2. Get an API key at https://console.cloud.google.com → Custom Search API
-// Env vars required: GOOGLE_CSE_KEY, GOOGLE_CSE_ID
+// Uses Brave Search API
+// Free tier: 2,000 queries/month, no credit card needed
+// Sign up at: https://brave.com/search/api/
+// Env var required: BRAVE_SEARCH_KEY
 
 const https = require('https');
 
 /**
- * Search for LinkedIn profiles using Google Custom Search API
+ * Search for LinkedIn profiles using Brave Search API
  */
 async function searchLinkedIn(company, keywords, brOnly = false, page = 1) {
   const kwPart = keywords.slice(0, 5).map(k => `"${k}"`).join(' OR ');
-  // No site: prefix needed — CSE is restricted to www.linkedin.com/in/*
-  let query = `"${company}" (${kwPart})`;
+  let query = `site:linkedin.com/in "${company}" (${kwPart})`;
   if (brOnly) query += ' (Brasil OR Brazil OR "São Paulo" OR "Rio de Janeiro" OR "Minas Gerais" OR "Porto Alegre")';
 
-  const apiKey = process.env.GOOGLE_CSE_KEY;
-  const cseId  = process.env.GOOGLE_CSE_ID;
+  const apiKey = process.env.BRAVE_SEARCH_KEY;
+  if (!apiKey) {
+    throw new Error('BRAVE_SEARCH_KEY environment variable not set. Add it in Vercel → Settings → Environment Variables.');
+  }
 
-  if (!apiKey) throw new Error('GOOGLE_CSE_KEY environment variable not set. Add it in Vercel → Settings → Environment Variables.');
-  if (!cseId)  throw new Error('GOOGLE_CSE_ID environment variable not set. Add it in Vercel → Settings → Environment Variables.');
-
-  return googleSearch(query, apiKey, cseId, page);
+  return braveSearch(query, apiKey, page);
 }
 
-function googleSearch(query, apiKey, cseId, page = 1) {
+function braveSearch(query, apiKey, page = 1) {
   return new Promise((resolve, reject) => {
-    // Google CSE uses 1-based `start` index: page 1 = 1, page 2 = 11, etc.
-    const start = (page - 1) * 10 + 1;
+    const offset = (page - 1) * 10;
     const params = new URLSearchParams({
-      key:   apiKey,
-      cx:    cseId,
-      q:     query,
-      num:   10,
-      start: start,
+      q:      query,
+      count:  10,
+      offset: offset,
     });
 
     const options = {
-      hostname: 'www.googleapis.com',
-      path:     `/customsearch/v1?${params}`,
+      hostname: 'api.search.brave.com',
+      path:     `/res/v1/web/search?${params}`,
       method:   'GET',
+      headers:  {
+        'Accept':               'application/json',
+        'Accept-Encoding':      'gzip',
+        'X-Subscription-Token': apiKey,
+      },
     };
 
     const req = https.request(options, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
+      const chunks = [];
+      res.on('data', chunk => chunks.push(chunk));
       res.on('end', () => {
         try {
-          const json = JSON.parse(data);
+          const raw  = Buffer.concat(chunks);
+          const text = raw.toString('utf8');
+          const json = JSON.parse(text);
 
           if (res.statusCode !== 200) {
-            return reject(new Error(`Google CSE error ${res.statusCode}: ${json?.error?.message || data.slice(0, 200)}`));
+            return reject(new Error(`Brave API error ${res.statusCode}: ${json?.message || text.slice(0, 200)}`));
           }
 
-          const items = json?.items || [];
+          const items = json?.web?.results || [];
           const results = items
-            .filter(r => /linkedin\.com\/in\//i.test(r.link))
+            .filter(r => /linkedin\.com\/in\//i.test(r.url))
             .map(r => ({
-              url:     normalizeLinkedInUrl(r.link),
-              title:   r.title   || '',
-              snippet: r.snippet || '',
+              url:     normalizeLinkedInUrl(r.url),
+              title:   r.title       || '',
+              snippet: r.description || '',
             }));
 
           resolve(results);
