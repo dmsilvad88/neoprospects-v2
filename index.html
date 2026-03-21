@@ -212,6 +212,7 @@ textarea::placeholder { color: var(--text3); }
 }
 .act-btn:hover { border-color: var(--navy); color: var(--navy); background: var(--navy-light); }
 .act-btn.danger:hover { border-color: var(--error); color: var(--error); background: var(--error-dim); }
+.act-btn:disabled { opacity: .4; cursor: not-allowed; pointer-events: none; }
 
 /* ── Company cards ────────────────────────────────────────────────────────── */
 .co-card {
@@ -342,6 +343,38 @@ textarea::placeholder { color: var(--text3); }
 .rescan-btn:hover { background: var(--navy); color: #fff; border-color: var(--navy); }
 .rescan-btn:disabled { opacity: .5; cursor: not-allowed; }
 
+/* ── Mode toggle ──────────────────────────────────────────────────────────── */
+.mode-toggle {
+  display: flex; gap: 8px; margin-bottom: 14px;
+}
+.mode-btn {
+  flex: 1; padding: 10px 16px; border-radius: var(--r-sm);
+  font-family: var(--font); font-size: 12px; font-weight: 700;
+  cursor: pointer; transition: all .2s; border: 1.5px solid var(--border2);
+  background: var(--surface); color: var(--text2); box-shadow: var(--sh-sm);
+}
+.mode-btn:hover { border-color: var(--navy); color: var(--navy); background: var(--navy-light); }
+.mode-btn.active { background: var(--navy); border-color: var(--navy); color: #fff; box-shadow: var(--sh-md); }
+
+/* ── Quick search cards ───────────────────────────────────────────────────── */
+.quick-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r); margin-bottom: 10px; padding: 18px 20px;
+  box-shadow: var(--sh-sm); animation: fadeUp .3s ease both;
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+}
+.quick-card:hover { box-shadow: var(--sh-md); }
+.quick-co-info { flex: 1; min-width: 0; }
+.quick-co-name { font-weight: 800; font-size: 15px; color: var(--navy); margin-bottom: 5px; }
+.quick-query { font-family: var(--mono); font-size: 10px; color: var(--text3); word-break: break-all; }
+.quick-link {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: var(--orange); color: #fff; text-decoration: none;
+  font-weight: 700; font-size: 13px; padding: 10px 18px;
+  border-radius: var(--r-sm); white-space: nowrap; transition: background .15s; flex-shrink: 0;
+}
+.quick-link:hover { background: var(--orange-h); }
+
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
@@ -382,7 +415,13 @@ textarea::placeholder { color: var(--text3); }
     </div>
   </div>
 
-  <div class="panel" style="margin-top:10px">
+  <!-- Mode toggle -->
+  <div class="mode-toggle">
+    <button class="mode-btn" id="mode-quick" onclick="setMode('quick')">⚡ Quick Search — generate Google dork links</button>
+    <button class="mode-btn" id="mode-full"  onclick="setMode('full')">🔍 Full Search — auto-fetch LinkedIn profiles</button>
+  </div>
+
+  <div id="outreach-wrap" class="panel" style="margin-top:0;margin-bottom:14px">
     <div class="plabel">Outreach Message <span class="hint">optional · placeholders: {name} {first_name} {company} {title} {location}</span></div>
     <textarea id="txt-outreach" rows="4" placeholder="Hi {first_name}, I came across your profile and noticed you work as {title} at {company}. I'd love to connect!"></textarea>
   </div>
@@ -390,7 +429,7 @@ textarea::placeholder { color: var(--text3); }
   <!-- Search button -->
   <button class="search-btn" id="search-btn" onclick="runSearch()">
     <div class="spinner"></div>
-    <span class="btn-lbl">🔍 Search LinkedIn Profiles</span>
+    <span class="btn-lbl" id="btn-lbl">🔍 Search LinkedIn Profiles</span>
   </button>
 
   <!-- Progress -->
@@ -408,7 +447,7 @@ textarea::placeholder { color: var(--text3); }
     <div class="res-hdr">
       <h2>Prospects <span class="res-meta" id="results-meta"></span></h2>
       <div class="res-actions">
-        <button class="act-btn" onclick="exportCSV()">⬇ Export CSV</button>
+        <button class="act-btn" id="export-csv-btn" onclick="exportCSV()">⬇ Export CSV</button>
         <button class="act-btn danger" onclick="clearAll()">🗑 Clear All</button>
       </div>
     </div>
@@ -424,6 +463,9 @@ textarea::placeholder { color: var(--text3); }
 // Set this to your Vercel deployment URL after deploying the API
 // It will also be saved/loaded from localStorage
 const API_BASE = 'https://neoprospects-v2.vercel.app';
+
+// ── Mode ──────────────────────────────────────────────────────────────────────
+let MODE = localStorage.getItem('np2_mode') || 'full'; // 'quick' | 'full'
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let STATE = {};
@@ -459,8 +501,66 @@ function loadCfg() {
   }catch(e){}
 }
 
+// ── Mode switching ────────────────────────────────────────────────────────────
+function setMode(m) {
+  MODE = m;
+  localStorage.setItem('np2_mode', m);
+  g('mode-quick').classList.toggle('active', m === 'quick');
+  g('mode-full').classList.toggle('active',  m === 'full');
+  g('outreach-wrap').style.display = m === 'quick' ? 'none' : '';
+  g('btn-lbl').textContent = m === 'quick' ? '⚡ Generate Google Links' : '🔍 Search LinkedIn Profiles';
+  const csvBtn = g('export-csv-btn'); if (csvBtn) csvBtn.disabled = m === 'quick';
+  // Clear results when switching modes
+  g('results-section').style.display = 'none';
+  g('results-body').innerHTML = '';
+  g('status').className = 'status';
+}
+
+// ── Google dork URL builder ───────────────────────────────────────────────────
+function gUrl(co, kws) {
+  const kw = kws.slice(0, 5).map(k => `"${k}"`).join(' OR ');
+  const q  = `site:linkedin.com/in "${co}" (${kw})`;
+  return `https://www.google.com/search?q=${encodeURIComponent(q)}`;
+}
+
+// ── Quick search (client-side only) ──────────────────────────────────────────
+function runQuickSearch() {
+  const companies = getCos();
+  const keywords  = getKws();
+  if (!companies.length) return setStatus('err', 'Enter at least one company.');
+  if (!keywords.length)  return setStatus('err', 'Enter at least one keyword.');
+  saveCfg();
+  renderQuick(companies, keywords);
+}
+
+function renderQuick(companies, keywords) {
+  const sec  = g('results-section');
+  const body = g('results-body');
+  g('results-meta').textContent = `— ${companies.length} compan${companies.length !== 1 ? 'ies' : 'y'}`;
+  sec.style.display = 'block';
+  body.innerHTML = '';
+
+  companies.forEach((co, ci) => {
+    const url   = gUrl(co, keywords);
+    const kw    = keywords.slice(0, 5).map(k => `"${k}"`).join(' OR ');
+    const query = `site:linkedin.com/in "${co}" (${kw})`;
+    const card  = document.createElement('div');
+    card.className = 'quick-card';
+    card.style.animationDelay = `${ci * 0.05}s`;
+    card.innerHTML = `
+      <div class="quick-co-info">
+        <div class="quick-co-name">${esc(co)}</div>
+        <div class="quick-query">${esc(query)}</div>
+      </div>
+      <a class="quick-link" href="${esc(url)}" target="_blank" rel="noopener">↗ Search on Google</a>`;
+    body.appendChild(card);
+  });
+}
+
 // ── Main search ───────────────────────────────────────────────────────────────
 async function runSearch() {
+  if (MODE === 'quick') { runQuickSearch(); return; }
+
   const companies = getCos();
   const keywords  = getKws();
   if (!companies.length) return setStatus('err', 'Enter at least one company.');
@@ -845,7 +945,8 @@ function getKws() { return g('txt-keywords').value.split('\n').map(s=>s.trim()).
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 load(); loadCfg();
-if (Object.keys(STATE).length) render();
+setMode(MODE);
+if (MODE === 'full' && Object.keys(STATE).length) render();
 
 </script>
 </body>
