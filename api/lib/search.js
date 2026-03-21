@@ -3,7 +3,7 @@
 // Free tier: 100 queries/day, resets daily — no credit card needed
 // Setup: https://developers.google.com/custom-search/v1/overview
 // 1. Create a CSE at https://programmablesearchengine.google.com
-//    - Set "Search the entire web" and add linkedin.com as a site hint
+//    - Add www.linkedin.com/in/* as the site to search
 // 2. Get an API key at https://console.cloud.google.com → Custom Search API
 // Env vars required: GOOGLE_CSE_KEY, GOOGLE_CSE_ID
 
@@ -14,7 +14,8 @@ const https = require('https');
  */
 async function searchLinkedIn(company, keywords, brOnly = false, page = 1) {
   const kwPart = keywords.slice(0, 5).map(k => `"${k}"`).join(' OR ');
-  let query = `site:linkedin.com/in "${company}" (${kwPart})`;
+  // No site: prefix needed — CSE is restricted to www.linkedin.com/in/*
+  let query = `"${company}" (${kwPart})`;
   if (brOnly) query += ' (Brasil OR Brazil OR "São Paulo" OR "Rio de Janeiro" OR "Minas Gerais" OR "Porto Alegre")';
 
   const apiKey = process.env.GOOGLE_CSE_KEY;
