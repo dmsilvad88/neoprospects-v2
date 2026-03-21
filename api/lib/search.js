@@ -1,28 +1,28 @@
 // lib/search.js
-// Uses Brave Search API
-// Free tier: 2,000 queries/month, no credit card needed
-// Sign up at: https://brave.com/search/api/
-// Env var required: BRAVE_SEARCH_KEY
+// Uses Bing Web Search API (Azure)
+// Free tier: 1,000 queries/month (F1), resets monthly — no credit card needed
+// Setup: portal.azure.com → Create resource → "Bing Search v7" → F1 tier
+// Env var required: BING_SEARCH_KEY
 
 const https = require('https');
 
 /**
- * Search for LinkedIn profiles using Brave Search API
+ * Search for LinkedIn profiles using Bing Web Search API
  */
 async function searchLinkedIn(company, keywords, brOnly = false, page = 1) {
   const kwPart = keywords.slice(0, 5).map(k => `"${k}"`).join(' OR ');
   let query = `site:linkedin.com/in "${company}" (${kwPart})`;
   if (brOnly) query += ' (Brasil OR Brazil OR "São Paulo" OR "Rio de Janeiro" OR "Minas Gerais" OR "Porto Alegre")';
 
-  const apiKey = process.env.BRAVE_SEARCH_KEY;
+  const apiKey = process.env.BING_SEARCH_KEY;
   if (!apiKey) {
-    throw new Error('BRAVE_SEARCH_KEY environment variable not set. Add it in Vercel → Settings → Environment Variables.');
+    throw new Error('BING_SEARCH_KEY environment variable not set. Add it in Vercel → Settings → Environment Variables.');
   }
 
-  return braveSearch(query, apiKey, page);
+  return bingSearch(query, apiKey, page);
 }
 
-function braveSearch(query, apiKey, page = 1) {
+function bingSearch(query, apiKey, page = 1) {
   return new Promise((resolve, reject) => {
     const offset = (page - 1) * 10;
     const params = new URLSearchParams({
@@ -32,36 +32,32 @@ function braveSearch(query, apiKey, page = 1) {
     });
 
     const options = {
-      hostname: 'api.search.brave.com',
-      path:     `/res/v1/web/search?${params}`,
+      hostname: 'api.bing.microsoft.com',
+      path:     `/v7.0/search?${params}`,
       method:   'GET',
       headers:  {
-        'Accept':               'application/json',
-        'Accept-Encoding':      'gzip',
-        'X-Subscription-Token': apiKey,
+        'Ocp-Apim-Subscription-Key': apiKey,
       },
     };
 
     const req = https.request(options, (res) => {
-      const chunks = [];
-      res.on('data', chunk => chunks.push(chunk));
+      let data = '';
+      res.on('data', chunk => data += chunk);
       res.on('end', () => {
         try {
-          const raw  = Buffer.concat(chunks);
-          const text = raw.toString('utf8');
-          const json = JSON.parse(text);
+          const json = JSON.parse(data);
 
           if (res.statusCode !== 200) {
-            return reject(new Error(`Brave API error ${res.statusCode}: ${json?.message || text.slice(0, 200)}`));
+            return reject(new Error(`Bing API error ${res.statusCode}: ${json?.error?.message || data.slice(0, 200)}`));
           }
 
-          const items = json?.web?.results || [];
+          const items = json?.webPages?.value || [];
           const results = items
             .filter(r => /linkedin\.com\/in\//i.test(r.url))
             .map(r => ({
               url:     normalizeLinkedInUrl(r.url),
-              title:   r.title       || '',
-              snippet: r.description || '',
+              title:   r.name    || '',
+              snippet: r.snippet || '',
             }));
 
           resolve(results);
