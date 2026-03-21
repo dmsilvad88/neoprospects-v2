@@ -1,43 +1,43 @@
 // lib/search.js
-// Uses Bing Web Search API (Azure)
-// Free tier: 1,000 queries/month (F1), resets monthly — no credit card needed
-// Setup: portal.azure.com → Create resource → "Bing Search v7" → F1 tier
-// Env var required: BING_SEARCH_KEY
+// Uses Serper.dev Google Search API
+// Free tier: 2,500 searches, no credit card needed
+// Sign up at: https://serper.dev
 
 const https = require('https');
 
 /**
- * Search for LinkedIn profiles using Bing Web Search API
+ * Search for LinkedIn profiles using Serper.dev (Google Search API)
  */
 async function searchLinkedIn(company, keywords, brOnly = false, page = 1) {
   const kwPart = keywords.slice(0, 5).map(k => `"${k}"`).join(' OR ');
   let query = `site:linkedin.com/in "${company}" (${kwPart})`;
   if (brOnly) query += ' (Brasil OR Brazil OR "São Paulo" OR "Rio de Janeiro" OR "Minas Gerais" OR "Porto Alegre")';
 
-  const apiKey = process.env.BING_SEARCH_KEY;
+  const apiKey = process.env.SERPER_API_KEY;
   if (!apiKey) {
-    throw new Error('BING_SEARCH_KEY environment variable not set. Add it in Vercel → Settings → Environment Variables.');
+    throw new Error('SERPER_API_KEY environment variable not set. Add it in Vercel → Settings → Environment Variables.');
   }
 
-  return bingSearch(query, apiKey, page);
+  return serperSearch(query, apiKey, page);
 }
 
-function bingSearch(query, apiKey, page = 1) {
+function serperSearch(query, apiKey, page = 1) {
   return new Promise((resolve, reject) => {
-    const offset = (page - 1) * 10;
-    const params = new URLSearchParams({
-      q:      query,
-      count:  10,
-      offset: offset,
+    const body = JSON.stringify({
+      q:    query,
+      num:  10,
+      page: page,
     });
 
     const options = {
-      hostname: 'api.bing.microsoft.com',
-      path:     `/v7.0/search?${params}`,
-      method:   'GET',
+      hostname: 'google.serper.dev',
+      path:     '/search',
+      method:   'POST',
       headers:  {
-        'Ocp-Apim-Subscription-Key': apiKey,
-      },
+        'X-API-KEY':      apiKey,
+        'Content-Type':   'application/json',
+        'Content-Length': Buffer.byteLength(body),
+      }
     };
 
     const req = https.request(options, (res) => {
@@ -48,16 +48,17 @@ function bingSearch(query, apiKey, page = 1) {
           const json = JSON.parse(data);
 
           if (res.statusCode !== 200) {
-            return reject(new Error(`Bing API error ${res.statusCode}: ${json?.error?.message || data.slice(0, 200)}`));
+            return reject(new Error(`Serper API error ${res.statusCode}: ${json?.message || data.slice(0,200)}`));
           }
 
-          const items = json?.webPages?.value || [];
-          const results = items
-            .filter(r => /linkedin\.com\/in\//i.test(r.url))
+          // Serper returns organic results in json.organic
+          const organic = json?.organic || [];
+          const results = organic
+            .filter(r => /linkedin\.com\/in\//i.test(r.link))
             .map(r => ({
-              url:     normalizeLinkedInUrl(r.url),
-              title:   r.name    || '',
-              snippet: r.snippet || '',
+              url:     normalizeLinkedInUrl(r.link),
+              title:   r.title   || '',
+              snippet: r.snippet || ''
             }));
 
           resolve(results);
@@ -69,6 +70,7 @@ function bingSearch(query, apiKey, page = 1) {
 
     req.on('error', reject);
     req.setTimeout(10000, () => { req.destroy(); reject(new Error('Search timeout')); });
+    req.write(body);
     req.end();
   });
 }
