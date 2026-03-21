@@ -46,12 +46,12 @@ module.exports = async function handler(req, res) {
 async function handleSearch(req, res) {
   try {
     const body = await parseBody(req);
-    const { company, keywords, brOnly = true } = body;
+    const { company, keywords, brOnly = false, page = 1 } = body;
 
     if (!company)          return res.status(400).json({ error: 'company is required' });
     if (!keywords?.length) return res.status(400).json({ error: 'keywords is required' });
 
-    const raw      = await searchLinkedIn(company, keywords, brOnly);
+    const raw      = await searchLinkedIn(company, keywords, brOnly, page);
     const profiles = parseResults(raw, [company], keywords);
 
     return res.status(200).json({
@@ -71,7 +71,7 @@ async function handleSearch(req, res) {
 async function handleBatchSearch(req, res) {
   try {
     const body = await parseBody(req);
-    const { companies, keywords, brOnly = true } = body;
+    const { companies, keywords, brOnly = false } = body;
 
     if (!companies?.length) return res.status(400).json({ error: 'companies is required' });
     if (!keywords?.length)  return res.status(400).json({ error: 'keywords is required' });

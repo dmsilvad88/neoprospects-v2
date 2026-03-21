@@ -8,7 +8,7 @@ const https = require('https');
 /**
  * Search for LinkedIn profiles using Serper.dev (Google Search API)
  */
-async function searchLinkedIn(company, keywords, brOnly = true) {
+async function searchLinkedIn(company, keywords, brOnly = false, page = 1) {
   const kwPart = keywords.slice(0, 5).map(k => `"${k}"`).join(' OR ');
   let query = `site:linkedin.com/in "${company}" (${kwPart})`;
   if (brOnly) query += ' (Brasil OR Brazil OR "São Paulo" OR "Rio de Janeiro" OR "Minas Gerais" OR "Porto Alegre")';
@@ -18,16 +18,15 @@ async function searchLinkedIn(company, keywords, brOnly = true) {
     throw new Error('SERPER_API_KEY environment variable not set. Add it in Vercel → Settings → Environment Variables.');
   }
 
-  return serperSearch(query, apiKey);
+  return serperSearch(query, apiKey, page);
 }
 
-function serperSearch(query, apiKey) {
+function serperSearch(query, apiKey, page = 1) {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify({
-      q:   query,
-      num: 20,       // results per page
-      gl:  'br',     // geolocation: Brazil
-      hl:  'pt-br',  // language: Brazilian Portuguese
+      q:    query,
+      num:  10,
+      page: page,
     });
 
     const options = {

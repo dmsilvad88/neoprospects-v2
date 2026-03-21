@@ -321,13 +321,15 @@ textarea::placeholder { color: var(--text3); }
   padding: 28px 20px; text-align: center; color: var(--text3); font-size: 13px;
 }
 
-.addrow { padding: 10px 18px; background: var(--surface2); border-top: 1px solid var(--border); }
-.addbtn {
+
+.loadmore-row { padding: 10px 18px; background: var(--surface2); border-top: 1px solid var(--border); }
+.loadmore-btn {
   background: none; border: 1px dashed var(--border2); border-radius: var(--r-sm);
   color: var(--text3); font-family: var(--font); font-size: 12px; font-weight: 700;
   padding: 7px 16px; cursor: pointer; width: 100%; transition: all .15s;
 }
-.addbtn:hover { border-color: var(--orange); color: var(--orange); background: var(--orange-dim); }
+.loadmore-btn:hover:not(:disabled) { border-color: var(--navy); color: var(--navy); background: var(--navy-light); }
+.loadmore-btn:disabled { opacity: .5; cursor: not-allowed; }
 
 .divider { height: 1px; background: var(--border); margin: 28px 0; }
 
@@ -383,17 +385,6 @@ textarea::placeholder { color: var(--text3); }
   <div class="panel" style="margin-top:10px">
     <div class="plabel">Outreach Message <span class="hint">optional · placeholders: {name} {first_name} {company} {title} {location}</span></div>
     <textarea id="txt-outreach" rows="4" placeholder="Hi {first_name}, I came across your profile and noticed you work as {title} at {company}. I'd love to connect!"></textarea>
-  </div>
-
-  <div class="opts">
-    <label class="chip"><input type="checkbox" id="opt-br" checked> 🇧🇷 Brazil filter</label>
-    <div class="chip">
-      Mode:
-      <select id="opt-mode">
-        <option value="batch">All companies at once</option>
-        <option value="single">One company at a time</option>
-      </select>
-    </div>
   </div>
 
   <!-- Search button -->
@@ -465,8 +456,6 @@ function loadCfg() {
     if(c.co)  g('txt-companies').value = c.co;
     if(c.kw)  g('txt-keywords').value  = c.kw;
     if(c.msg) g('txt-outreach').value  = c.msg;
-    g('opt-br').checked = c.br !== false;
-    if(c.mode) g('opt-mode').value = c.mode;
   }catch(e){}
 }
 
@@ -474,13 +463,8 @@ function loadCfg() {
 async function runSearch() {
   const companies = getCos();
   const keywords  = getKws();
-  const brOnly    = g('opt-br').checked;
-  const mode      = g('opt-mode').value;
-
   if (!companies.length) return setStatus('err', 'Enter at least one company.');
   if (!keywords.length)  return setStatus('err', 'Enter at least one keyword.');
-
-  
 
   saveCfg();
   const btn = g('search-btn');
@@ -490,11 +474,7 @@ async function runSearch() {
   logProgress(`Starting search for ${companies.length} companies…`);
 
   try {
-    if (mode === 'batch') {
-      await runBatchSearch(companies, keywords, brOnly);
-    } else {
-      await runSequentialSearch(companies, keywords, brOnly);
-    }
+    await runSequentialSearch(companies, keywords);
   } catch(e) {
     setStatus('err', `Search failed: ${e.message}`);
   } finally {
@@ -503,41 +483,7 @@ async function runSearch() {
   }
 }
 
-async function runBatchSearch(companies, keywords, brOnly) {
-  logProgress('Sending batch request to API…');
-  setProgress(20);
-
-  const r = await fetch(`${API_BASE}/api/search/batch`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ companies, keywords, brOnly })
-  });
-
-  if (!r.ok) {
-    const e = await r.json().catch(()=>({}));
-    throw new Error(e.error || `API error ${r.status}`);
-  }
-
-  setProgress(80);
-  const data = await r.json();
-
-  // Merge into STATE
-  let added = 0;
-  Object.entries(data.results).forEach(([co, profiles]) => {
-    if (!STATE[co]) STATE[co] = [];
-    profiles.forEach(p => {
-      const exists = STATE[co].some(x => x.name?.toLowerCase() === p.name?.toLowerCase());
-      if (!exists && p.name) { STATE[co].push({ ...p, addedAt: Date.now() }); added++; }
-    });
-  });
-
-  setProgress(100);
-  save(); render();
-  setStatus('ok', `✓ Found ${data.total} profiles across ${data.companies} companies.`);
-  logProgress(`Done — ${data.total} profiles found.`);
-}
-
-async function runSequentialSearch(companies, keywords, brOnly) {
+async function runSequentialSearch(companies, keywords) {
   let total = 0;
   for (let i = 0; i < companies.length; i++) {
     const co = companies[i];
@@ -549,7 +495,7 @@ async function runSequentialSearch(companies, keywords, brOnly) {
       const r = await fetch(`${API_BASE}/api/search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ company: co, keywords, brOnly })
+        body: JSON.stringify({ company: co, keywords })
       });
 
       if (!r.ok) { logProgress(`✗ ${co}: API error ${r.status}`); continue; }
@@ -573,12 +519,50 @@ async function runSequentialSearch(companies, keywords, brOnly) {
   setStatus('ok', `✓ Search complete — ${total} new profiles found.`);
 }
 
+// ── Load more (pagination) ────────────────────────────────────────────────────
+const PAGES = {};
+
+async function loadMore(co, ci) {
+  const btn = document.getElementById(`lm-${ci}`);
+  const keywords = getKws();
+  const page = (PAGES[co] || 1) + 1;
+
+  btn.disabled = true;
+  btn.textContent = 'Loading…';
+
+  try {
+    const r = await fetch(`${API_BASE}/api/search`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ company: co, keywords, page }),
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+
+    if (!STATE[co]) STATE[co] = [];
+    let added = 0;
+    data.profiles.forEach(p => {
+      const exists = STATE[co].some(x => x.name?.toLowerCase() === p.name?.toLowerCase());
+      if (!exists && p.name) { STATE[co].push({ ...p, addedAt: Date.now() }); added++; }
+    });
+
+    PAGES[co] = page;
+    save(); render();
+
+    if (added === 0) showToast('No new profiles found on this page.');
+    else showToast(`+${added} new profile${added > 1 ? 's' : ''} loaded.`);
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = '↓ Load more';
+    showToast(`Error: ${e.message}`);
+  }
+}
+
 // ── Rescan single company ─────────────────────────────────────────────────────
 async function rescanCompany(co, btnEl) {
 
 
   const keywords = getKws();
-  const brOnly   = g('opt-br').checked;
 
   btnEl.disabled = true; btnEl.textContent = '⏳';
 
@@ -586,7 +570,7 @@ async function rescanCompany(co, btnEl) {
     const r = await fetch(`${API_BASE}/api/search`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ company: co, keywords, brOnly })
+      body: JSON.stringify({ company: co, keywords })
     });
     const data = await r.json();
 
@@ -656,7 +640,7 @@ function render() {
         ${profs.length === 0
           ? `<div class="empty-hint">No profiles found yet — click <strong>↻ Re-search</strong> or run a full search above.</div>`
           : profs.map((p, pi) => profRow(p, ci, pi, co)).join('')}
-        <div class="addrow"><button class="addbtn" onclick="addManual(${ci},'${esc(co)}')">+ Add manually</button></div>
+        <div class="loadmore-row"><button class="loadmore-btn" id="lm-${ci}" onclick="loadMore('${esc(co)}',${ci})">↓ Load more</button></div>
       </div>`;
     body.appendChild(card);
   });
@@ -687,16 +671,6 @@ function profRow(p, ci, pi, co) {
 function toggleCard(hdr) { hdr.closest('.co-card').classList.toggle('open'); }
 
 // ── Manual add / edit URL ─────────────────────────────────────────────────────
-function addManual(ci, co) {
-  const name  = prompt(`Name (at ${co}):`); if(!name) return;
-  const title = prompt('Job title:') || '';
-  const url   = prompt('LinkedIn URL (optional):') || '';
-  const kws   = getKws();
-  const matched = kws.find(k => title.toLowerCase().includes(k.toLowerCase())) || '';
-  if (!STATE[co]) STATE[co] = [];
-  STATE[co].push({ name, title, company: co, url, location: '', matched, addedAt: Date.now() });
-  save(); render();
-}
 
 function addUrl(co, idx) {
   const p = STATE[co]?.[idx]; if(!p) return;
