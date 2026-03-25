@@ -100,25 +100,36 @@ function parseResult(result, cosLower, kwsLower) {
   let location = '';
 
   if (snippet) {
-    // "City, State · Title · Company" or "City, Country. Title..."
-    const parts = snippet.split(/\s*[·•]\s*/);
+    const parts = snippet.split(/\s*[·•]\s*/).map(s => s.trim()).filter(Boolean);
 
-    if (parts[0] && isLocation(parts[0])) {
-      location = parts[0].trim();
-      if (!jobTitle && parts[1]) jobTitle = parts[1].trim();
-      if (!company  && parts[2]) company  = parts[2].trim();
+    for (const part of parts) {
+      // Skip follower/connection counts (e.g. "500 followers", "300 seguidores")
+      if (/^\d[\d\s,\.]*\+?\s*(?:followers?|connections?|seguidores?|conexões)/i.test(part)) continue;
+
+      // Classify as location
+      if (!location && isLocation(part)) {
+        location = part;
+        continue;
+      }
+
+      // Classify as company via known list
+      if (!company) {
+        const mc = matchCompany(part, cosLower);
+        if (mc) { company = mc; continue; }
+      }
+
+      // Remaining segments: first goes to jobTitle, second to company
+      if (!jobTitle && part.length >= 3 && part.length <= 100) {
+        jobTitle = part;
+      } else if (!company && part.length >= 2 && part.length <= 80) {
+        company = part;
+      }
     }
 
-    // Try comma-separated location
+    // Try comma-separated location if still missing
     if (!location) {
       const locMatch = snippet.match(/^([A-ZÀ-Ú][a-zà-ú\s]+(?:,\s*[A-ZÀ-Ú][a-zà-ú\s]+){1,3})/);
       if (locMatch && isLocation(locMatch[1])) location = locMatch[1].trim();
-    }
-
-    // Enrich job title from snippet if still missing
-    if (!jobTitle) {
-      const titleMatch = snippet.match(/(?:·|•)\s*([^·•]{5,60})(?:\s*[·•]|$)/);
-      if (titleMatch) jobTitle = titleMatch[1].trim();
     }
   }
 
